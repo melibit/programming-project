@@ -1,3 +1,5 @@
+Please note; the following this is a work-in-progress project for school.
+
 # Computer Science Programming Project Report
 
 ## Analysis
