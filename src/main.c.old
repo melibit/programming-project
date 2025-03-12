@@ -1,0 +1,319 @@
+#include <SDL3/SDL.h>
+
+#include <cstdlib>
+#include <cmath>
+
+#include <iostream>
+
+typedef float f32;
+typedef double f64;
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+typedef int8_t i8;
+typedef int16_t i16;
+typedef int32_t i32;
+typedef int64_t i64;
+typedef size_t usize;
+typedef ssize_t isize;
+
+#define PI 3.14159265358979323846264338327950288
+#define TAU (2 * PI)
+
+#define min(a, b) \
+  ({ __typeof__(a) _a = (a), _b = (b); _a < _b ? _a : _b; })
+#define max(a, b) \
+  ({ __typeof__(a) _a = (a), _b = (b); _a > _b ? _a : _b; })
+#define sign(a) \
+  ({ __typeof__(a) _a = (a); (__typeof__(a))(_a < 0 ? -1 : (_a > 0 ? 1 : 0)); })
+#define clamp(_x, _mi, _ma) \
+  (min(max(_x, _mi), _ma))
+
+typedef struct _v2s { f32 x, y; } v2;
+typedef struct _v2i { i32 x, y; } v2i;
+
+#define dot(v0, v1) \
+  ({ const v2 _v0 = (v0), _v1 = (v1); (_v0.x * _v1.x) + (_v0.x * _v1.y); })
+#define length(v) \
+  ({ const v2 _v = (v); sqrtf(dot(_v, _v)); })
+#define normalise(v) \
+  ({ const v2 _v = (v); const f32 l = length(_v); (v2) { _v.x / 1, _v.y / 1 }; })
+
+#define SCREEN_WIDTH 640
+#define SCREEN_HEIGHT 480
+#define WINDOW_SCALE 2
+
+#define CAM_Z 1.5f 
+#define HFOV (PI / 2.0f)
+#define VFOV 0.5f 
+
+#define ZNEAR 0.0001f
+#define ZFAR 128.0f
+
+#define MAX_SECTORS 64
+#define MAX_WALLS 512
+
+struct wall {
+  v2 a, b;
+};
+
+struct sector {
+  struct wall *walls;
+  usize nwalls, id;
+  f32 zfloor, zceil;
+};
+
+struct sectors {
+  struct sector arr[MAX_SECTORS];
+  usize n;
+};
+
+struct walls {
+  struct wall arr[MAX_WALLS];
+  usize n;
+};
+
+struct camera {
+  v2 pos;
+  f32 angle;
+  usize sector;
+};
+
+struct {
+  SDL_Window *window;
+  SDL_Texture *texture;
+  SDL_Renderer *renderer;
+  u32 *pixels;
+  bool quit;
+  
+  struct camera camera;
+    
+  struct sectors sectors;
+  struct walls walls;
+} state;
+
+static void verline(int x, int y0, int y1, u32 color) {
+    for (int y = y0; y <= y1; y++) {
+        state.pixels[y * SCREEN_WIDTH + x] = color;
+    }
+}
+
+void init_SDL() {
+  SDL_Init(SDL_INIT_VIDEO);
+    
+  state.window = SDL_CreateWindow("Programming Project", SCREEN_WIDTH * WINDOW_SCALE, SCREEN_HEIGHT * WINDOW_SCALE, 0);
+  if (state.window == nullptr) {
+    std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
+    SDL_Quit();
+    exit(1);
+  }
+
+  state.renderer = SDL_CreateRenderer(state.window, NULL);
+  if (state.renderer == nullptr) {
+    std::cerr << "SDL_CreateRenderer Error: " << SDL_GetError() << std::endl;
+    SDL_DestroyWindow(state.window);
+    SDL_Quit();
+    exit(1);
+  }
+
+  state.texture = SDL_CreateTexture(state.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
+
+  if (state.texture == nullptr) {
+    std::cerr << "SDL_CreateTexture Error: " << SDL_GetError() << std::endl;
+    SDL_DestroyRenderer(state.renderer);
+    SDL_DestroyWindow(state.window);
+    SDL_Quit();
+    exit(1);
+  }  
+}
+
+static inline v2 world_to_camera(v2 p) {
+  const v2 u = { p.x - state.camera.pos.x, p.y - state.camera.pos.y }; // Translate
+  return (v2) {
+    u.x * sinf(state.camera.angle) - u.y * cosf(state.camera.angle),
+    u.x * cosf(state.camera.angle) + u.y * sinf(state.camera.angle)
+  };
+}
+
+static inline f32 normalise_angle(f32 a) {
+  return a - (TAU * floorf((a + PI) / TAU));
+}
+
+// https://en.wikipedia.org/wiki/Line–line_intersection
+static inline v2 intersect(v2 a0, v2 a1, v2 b0, v2 b1) {
+  const f32 d = ((a0.x - a1.x) * (b0.y - b1.y)) - ((a0.y - a1.y) * (b0.x - b1.y));
+
+  if (fabsf(d) < 1e-6) 
+    return (v2) {NAN, NAN};
+  
+  const f32 t = (((a0.x - b0.x) * (b0.y - b1.y)) - ((a0.y - b0.y) * (b0.x - b1.x))) / d,
+            u = (((a0.x - b0.x) * (a0.y - a1.y)) - ((a0.y - b0.y) * (a0.x - a1.x))) / d;
+
+  if (t >= 0 && t <= 1 && u >= 0 && u <= 1)
+    return (v2) {a0.x + (t * (a1.x - a0.x)), a0.y + (t * (a1.y - a0.y))};
+  else 
+    return (v2) {NAN, NAN};
+  
+}
+
+static inline v2 rotate(v2 v, f32 a) {
+  return (v2) { v.x * cosf(a) - v.y * sinf(a), (v.x * sinf(a) + v.y * cosf(a)) };
+}
+
+static inline u32 angle_to_screen_x(f32 a) {
+  return ((u32) (SCREEN_WIDTH / 2)) * (1.0f - tanf(((a + (HFOV / 2.0)) / HFOV) * (PI / 2.0) - (PI / 4.0)));
+}
+
+void render() {
+  const v2
+    zdelta_l = rotate(((v2) { 0.0f, 1.0f }),  (HFOV / 2.0f)),
+    zdelta_r = rotate(((v2) { 0.0f, 1.0f }), -(HFOV / 2.0f)),
+    znear_l = (v2) { zdelta_l.x * ZNEAR, zdelta_l.y * ZNEAR },
+    znear_r = (v2) { zdelta_r.x * ZNEAR, zdelta_r.y * ZNEAR },
+    zfar_l = (v2) { zdelta_l.x * ZFAR, zdelta_l.y * ZFAR },
+    zfar_r = (v2) { zdelta_r.x * ZFAR, zdelta_r.y * ZFAR };
+
+  const struct sector *sector = &state.sectors.arr[state.camera.sector]; 
+
+  for (usize i = 0; i < sector->nwalls; i++) {
+    const struct wall *wall = &sector->walls[i];
+
+    std::clog << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
+      
+    const v2 
+      cam_a = world_to_camera(wall->a), 
+      cam_b = world_to_camera(wall->b);
+
+    std::clog << "[" << cam_a.x << ", " << cam_a.y << " | " << cam_b.x << ", " << cam_b.y << "]" << std::endl;
+    
+    if (cam_a.y <= 0 && cam_b.y <= 0)
+      continue; //cull walls behind player
+
+    f32
+      angle_a = normalise_angle(atan2(cam_a.y, cam_a.x) - (PI / 2.0f)),
+      angle_b = normalise_angle(atan2(cam_b.y, cam_b.x) - (PI / 2.0f));
+     
+    std::clog << "[" << angle_a << " | "<< angle_b << "]" << std::endl;
+    
+    v2 clip_a = cam_a, clip_b = cam_b;
+    
+    //Clip to `viewing frustrum` https://en.wikipedia.org/wiki/Viewing_frustum
+    if (clip_a.y < ZNEAR || clip_b.y < ZNEAR || angle_a > (HFOV / 2) || angle_b < -(HFOV / 2)) {
+      const v2 
+        isect_l = intersect(clip_a, clip_b, znear_l, zfar_l),
+        isect_r = intersect(clip_a, clip_b, znear_r, zfar_r);
+
+      if (isect_l.x != NAN) {
+        clip_a = isect_l;
+        angle_a = normalise_angle(atan2(clip_a.y, clip_a.x) - (PI / 2.0f));
+      }
+
+      if (isect_r.x != NAN) {
+        clip_b = isect_r;
+        angle_b = normalise_angle(atan2(clip_b.y, clip_b.x) - (PI / 2.0f));
+      }
+    }
+
+    if (angle_a < angle_b || (angle_a < (-HFOV / 2) && angle_b < -(HFOV / 2)) || (angle_a > (HFOV / 2) && angle_b > (HFOV / 2)))
+      continue;
+    
+    std::clog << "Clipped: [" << angle_a << " | " << angle_b << "]" << std::endl;
+    
+    const u32 
+      truex_a = angle_to_screen_x(angle_a),
+      truex_b = angle_to_screen_x(angle_b);
+
+    std::clog << "Truex: [" << truex_a << " | " << truex_b << "]" << std::endl;
+    
+    if (truex_a > SCREEN_WIDTH - 1)
+      continue;
+    if (truex_b < 0)
+      continue;
+    
+    const u32 
+      x_a = clamp(truex_a, 0, SCREEN_WIDTH - 1),
+      x_b = clamp(truex_b, 0, SCREEN_WIDTH - 1);
+    
+    const f32
+      zfloor = sector->zfloor,
+      zceil = sector->zceil;
+
+    const f32
+      screeny_a = ((VFOV * SCREEN_HEIGHT) / clip_a.y) != NAN ? (VFOV * SCREEN_HEIGHT) / clip_a.y : 1e10,
+      screeny_b = ((VFOV * SCREEN_HEIGHT) / clip_b.y) != NAN ? (VFOV * SCREEN_HEIGHT) / clip_b.y : 1e10;
+
+    const i32 
+      floory_a = (SCREEN_HEIGHT / 2) + (i32) (( zfloor - CAM_Z) * screeny_a),
+      ceily_a = (SCREEN_HEIGHT / 2) + (i32) (( zceil - CAM_Z) * screeny_a),
+      floory_b = (SCREEN_HEIGHT / 2) + (i32) (( zfloor - CAM_Z) * screeny_b),
+      ceily_b = (SCREEN_HEIGHT / 2) + (i32) (( zceil - CAM_Z) * screeny_b),
+      delta_truex = truex_b - truex_a,
+      delta_floory = floory_b - floory_a,
+      delta_ceily = ceily_b - ceily_a;
+    
+    for (i32 x = x_a; x <= x_b; x++) {
+      f32 prog_x = ((x - truex_a) / (f32) (delta_truex));
+      if (prog_x == NAN)
+        prog_x = 0;
+
+      const int 
+        truefloory = (i32) (prog_x * delta_floory) + floory_a,
+        trueceily = (i32)  (prog_x * delta_ceily) + ceily_a; 
+      
+      verline(x, 0, truefloory, 0xFFFF0000);
+      verline(x, trueceily, SCREEN_HEIGHT - 1, 0xFF00FFFF);
+    }
+
+  }
+}
+
+int main(int argc, char* argv[]) {
+  memset(&state, 0, sizeof(state));
+
+  init_SDL();
+  
+  state.sectors.n = 1;
+  state.sectors.arr[0] = (struct sector) {state.walls.arr, 4, 0, 0.0f, 3.0f};
+
+  state.walls.n = 4;
+  state.walls.arr[0] = (struct wall) {{3,5}, {3,0}};
+  state.walls.arr[1] = (struct wall) {{3,0}, {0,0}};
+  state.walls.arr[2] = (struct wall) {{0,0}, {0,5}};
+  state.walls.arr[3] = (struct wall) {{0,5}, {3,5}};
+
+  state.camera.pos = (v2) {1, 1};
+  state.camera.angle = 0;
+
+  state.pixels = (u32 *) malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
+    
+  while (!state.quit) {
+    SDL_Event e;
+    while (SDL_PollEvent(&e)) {
+      switch(e.type) {
+        case SDL_EVENT_QUIT:
+          state.quit = true;
+          break;
+      }
+    }
+    
+    state.camera.angle += 0.01f;
+
+    memset(state.pixels, 0, sizeof(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32)));  
+    
+    render();
+
+    SDL_UpdateTexture(state.texture, NULL, state.pixels, SCREEN_WIDTH * 4);
+    SDL_RenderTextureRotated(state.renderer, state.texture, NULL, NULL, 0.0, NULL, SDL_FLIP_VERTICAL);
+
+    SDL_RenderPresent(state.renderer);
+  }
+
+  free(state.pixels);
+
+  SDL_DestroyTexture(state.texture);
+  SDL_DestroyRenderer(state.renderer);
+  SDL_DestroyWindow(state.window);
+  SDL_Quit();
+  return 0;
+}
