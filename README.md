@@ -37,6 +37,8 @@ The source-code for [DOOM (1993)](https://github.com/id-Software/DOOM) and its p
 ### Flow-chart 
 [asciiflow](https://asciiflow.com/)
 ```
+(planned and over-simplified. subject to change.)
+
               Simplified Render Loop                       
          ┌─────────────────────────────┐                   
          │sector_queue <- camera.sector│                   
@@ -81,8 +83,9 @@ The source-code for [DOOM (1993)](https://github.com/id-Software/DOOM) and its p
 
 
 
-### Hierarchy Diagram 
+### Hierarchy Diagram
 ```
+(planned and over-simplified. subject to change.)
                                              ┌──────┐                                   
                                              │      │                                   
                                              │ Main │                                   
