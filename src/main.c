@@ -154,11 +154,11 @@ static inline v2 translate_vector(v2 v, v2 u) {
 
 static inline v2 world_to_camera(v2 p) {
   const v2 u = { p.x - state.camera.pos.x, p.y - state.camera.pos.y }; // Translate
-  return rotate_vector(u, state.camera.angle);
- /* return (v2) { //Rotate
+  //return rotate_vector(u, state.camera.angle);
+  return (v2) { //Rotate
     u.x * sinf(state.camera.angle) - u.y * cosf(state.camera.angle),
     u.x * cosf(state.camera.angle) + u.y * sinf(state.camera.angle)
-  }; */
+  }; 
 }
 
 static inline f32 normalise_angle(f32 a) {
@@ -189,7 +189,7 @@ void render() {
   
   draw_pixel({SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2}, 0xFF00FF00);
   
-  draw_line(v2_to_v2i(translate_vector(scale_vector(world_to_camera(state.camera.pos), SCALE_FACTOR), {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2})), v2_to_v2i(translate_vector(scale_vector(world_to_camera({state.camera.pos.x + 1, state.camera.pos.y}), SCALE_FACTOR), {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2})), 0xFF0000FF);
+  draw_line({SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2}, {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + SCALE_FACTOR / 2}, 0xFF00FF00);
 
   for (usize i = 0; i < sector->nwalls; i++) {
     const struct wall *wall = &sector->walls[i];
