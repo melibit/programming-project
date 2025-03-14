@@ -42,6 +42,14 @@ static inline v2i v2_to_v2i(v2 v) {
   return (v2i) { (i32)v.x, (i32)v.y };
 }
 
+static inline v2 add_v2(v2 u, v2 v) {
+  return (v2) { u.x + v.x, u.y + v.y};
+}
+
+static inline v2i add_v2i(v2i u, v2i v) {
+  return (v2i) { u.x + v.x, u.y + v.y };
+}
+
 #define SCREEN_WIDTH 640
 #define SCREEN_HEIGHT 480
 #define WINDOW_SCALE 2
@@ -148,17 +156,13 @@ static inline v2 rotate_vector(v2 u, f32 a) {
   };
 }
 
-static inline v2 translate_vector(v2 v, v2 u) {
-  return (v2) { v.x + u.x, v.y + u.y };
-}
-
 static inline v2 world_to_camera(v2 p) {
   const v2 u = { p.x - state.camera.pos.x, p.y - state.camera.pos.y }; // Translate
-  //return rotate_vector(u, state.camera.angle);
-  return (v2) { //Rotate
-    u.x * sinf(state.camera.angle) - u.y * cosf(state.camera.angle),
-    u.x * cosf(state.camera.angle) + u.y * sinf(state.camera.angle)
-  }; 
+  return rotate_vector(u, state.camera.angle);
+  //return (v2) { //Rotate
+  //  u.x * sinf(state.camera.angle) - u.y * cosf(state.camera.angle),
+  //  u.x * cosf(state.camera.angle) + u.y * sinf(state.camera.angle)
+  //}; 
 }
 
 static inline f32 normalise_angle(f32 a) {
@@ -175,8 +179,22 @@ static inline v2 scale_vector(v2 v, f32 sf) {
 static inline u32 get_test_colour(u32 i) {
   u32 a = 0xFF;
   u32 b = 0xFF * (i % 2);
-  u32 g = 0xFF * ((i+1) % 2);
-  return a << 24 | b << 16 | g << 8; 
+  u32 g = (0xFF/3) * ((i+1) % 4);
+  u32 r = (0xFF/2) * (i % 3);
+  return a << 24 | b << 16 | g << 8 | r; 
+}
+
+static inline v2i transform_to_map(v2 v, f32 sf) {
+  const v2 centre = { SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2};
+  return v2_to_v2i(add_v2(scale_vector(v, sf), centre));
+}
+
+static inline void draw_map_line(v2 a, v2 b, f32 sf, u32 colour) {
+  draw_line(transform_to_map(a, sf), transform_to_map(b, sf), colour);
+}
+
+static inline void draw_map_pixel(v2 a, f32 sf, u32 colour) {
+  draw_pixel(transform_to_map(a, sf), colour);
 }
 
 void render() {
@@ -187,9 +205,8 @@ void render() {
 
   std::clog << "Pos " << "[" << state.camera.pos.x << ", " << state.camera.pos.y << "]" << " Angle " << state.camera.angle << " Direction " << rotate_vector({1, 1}, state.camera.angle).x << ", " << rotate_vector({1, 1}, state.camera.angle).y << std::endl;   
   
-  draw_pixel({SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2}, 0xFF00FF00);
-  
-  draw_line({SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2}, {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + SCALE_FACTOR / 2}, 0xFF00FF00);
+  draw_map_pixel(world_to_camera(state.camera.pos), SCALE_FACTOR, 0xFF00FF00);
+  draw_map_line(world_to_camera(state.camera.pos), world_to_camera(add_v2(state.camera.pos, rotate_vector({0, 1}, -state.camera.angle))), SCALE_FACTOR, 0xFF00FF00);
 
   for (usize i = 0; i < sector->nwalls; i++) {
     const struct wall *wall = &sector->walls[i];
@@ -206,7 +223,7 @@ void render() {
       continue;
     }
     
-    draw_line(v2_to_v2i(translate_vector(scale_vector(cam_a, SCALE_FACTOR), {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2})), v2_to_v2i(translate_vector(scale_vector(cam_b, SCALE_FACTOR), {SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2})), get_test_colour(i));
+    draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i));
 
   }
 }
@@ -246,8 +263,17 @@ int main(int argc, char* argv[]) {
           break;
       }
     }
-        
-    state.camera.angle += 0.01f;
+    
+    const bool *keystate = SDL_GetKeyboardState(NULL);
+    if (keystate[SDL_SCANCODE_LEFT]) 
+      state.camera.angle -= 0.01;
+    if (keystate[SDL_SCANCODE_RIGHT])
+      state.camera.angle += 0.01;
+    if (keystate[SDL_SCANCODE_UP])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, 0.01}, -state.camera.angle));
+    if (keystate[SDL_SCANCODE_DOWN])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.01}, -state.camera.angle));
+
     state.camera.angle = normalise_angle(state.camera.angle);
     
 
