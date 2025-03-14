@@ -4,6 +4,9 @@
 #include <cmath>
 
 #include <iostream>
+#include <fstream>
+
+#define _DEBUG
 
 typedef float f32;
 typedef double f64;
@@ -132,6 +135,8 @@ void init_SDL() {
 static inline void draw_pixel(v2i v, u32 colour) {
   if (v.y < SCREEN_HEIGHT && v.x < SCREEN_WIDTH && v.y >= 0 && v.x >= 0)
     state.pixels[v.y * SCREEN_WIDTH + v.x] = colour;
+  else 
+    std::clog << "Attepted to draw off-screen @ " << v.x << ", " << v.y << std::endl;
 } 
 
 // DDA (update to Bresenham for time save?)
@@ -235,6 +240,11 @@ void clear_pixels() {
 }
 
 int main(int argc, char* argv[]) {
+  #ifndef _DEBUG 
+    std::ofstream nullstream;
+    std::clog.rdbuf(nullstream.rdbuf());
+  #endif
+
   memset(&state, 0, sizeof(state));
 
   init_SDL();

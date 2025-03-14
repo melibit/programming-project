@@ -141,6 +141,8 @@ project progress is slow so please forgive the bad testing. its very hard to tes
 
 ## Development
 
+I decided to use the SDL3 library, as it is cross-platform, relatively easy to build, and well-documented and used. I want to use no other dependencies.
+
 ### Program Code 
 ```
 
