@@ -126,11 +126,14 @@ The source-code for [DOOM (1993)](https://github.com/id-Software/DOOM) and its p
 
 ## Test Design & Testing 
 
+project progress is slow so please forgive the bad testing. its very hard to test something that doesnt exist yet! 
+
 | Test  | Data | Expected    | Pass/Fail | Feedback  | 
 | ----- | ---- | ----------- | --------- | --------- |
 | Level Loading | Simple Test Level  | Sectors load Correctly | | |
 | "           " | Complex Test Level | Sectors load Correctly | | |
 | Rendering | Single Sector Test | Sector renders Correctly | | |
+| Map | Single Sector Test | Map Draws Correctly | Pass | Test multi-sectors | 
 ----
 ### Test Screenshots:
 ![lettuce][./lettuce.bmp]
