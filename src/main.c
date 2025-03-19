@@ -74,6 +74,11 @@ struct sector {
   f32 zfloor, zceil;
 };
 
+struct render_queue {
+  struct sector* arr[MAX_SECTORS];
+  usize size;
+};
+
 struct sectors {
   struct sector arr[MAX_SECTORS];
   usize n;
@@ -102,6 +107,22 @@ struct {
   struct sectors sectors;
   struct walls walls;
 } state;
+
+//-1: left, 0: inside, 2: right
+static inline int point_wall_side(v2 p, v2 a, v2 b) {
+  return -(((p.x - a.x) * (b.y - a.y)) - ((p.y - a.y) * (b.x - a.x)));
+} 
+//https://wrfranklin.org/Research/Short_Notes/pnpoly.html
+// ???
+
+static inline bool inside_sector(v2 p, const struct sector *sector) {
+  for (usize i = 0; i < sector->nwalls; i++) {
+    const struct wall *wall = &sector->walls[i];
+    if (point_side(p, wall->a, wall->b) > 0)
+      return false;
+  }
+  return true;
+}
 
 void init_SDL() {
   SDL_Init(SDL_INIT_VIDEO);
@@ -135,8 +156,8 @@ void init_SDL() {
 static inline void draw_pixel(v2i v, u32 colour) {
   if (v.y < SCREEN_HEIGHT && v.x < SCREEN_WIDTH && v.y >= 0 && v.x >= 0)
     state.pixels[v.y * SCREEN_WIDTH + v.x] = colour;
-  else 
-    std::clog << "Attepted to draw off-screen @ " << v.x << ", " << v.y << std::endl;
+  //else 
+    //std::clog << "Attepted to draw off-screen @ " << v.x << ", " << v.y << std::endl;
 } 
 
 // DDA (update to Bresenham for time save?)
@@ -206,30 +227,48 @@ void render() {
   //draw_line({100, 100}, {300, 450}, 0xFFFF0000);
   
   std::clog << std::endl << std::endl << std::endl << state.camera.angle << std::endl;
-  const struct sector *sector = &state.sectors.arr[state.camera.sector]; 
 
   std::clog << "Pos " << "[" << state.camera.pos.x << ", " << state.camera.pos.y << "]" << " Angle " << state.camera.angle << " Direction " << rotate_vector({1, 1}, state.camera.angle).x << ", " << rotate_vector({1, 1}, state.camera.angle).y << std::endl;   
   
   draw_map_pixel(world_to_camera(state.camera.pos), SCALE_FACTOR, 0xFF00FF00);
-  draw_map_line(world_to_camera(state.camera.pos), world_to_camera(add_v2(state.camera.pos, rotate_vector({0, 1}, -state.camera.angle))), SCALE_FACTOR, 0xFF00FF00);
+  draw_map_line(world_to_camera(state.camera.pos), world_to_camera(add_v2(state.camera.pos, rotate_vector({0, 1}, -state.camera.angle))), SCALE_FACTOR, 0xC000FF00);
+ 
+  struct render_queue queue;
+  memset(&queue, 0, sizeof(queue));
+  
+  queue.arr[0] = &state.sectors.arr[state.camera.sector];
+  queue.size = 1;
+  
+  usize queue_idx = 0;
+  
+  while (queue_idx < queue.size) {
+    std::clog << "Rendering Sector " << queue.arr[queue_idx]->id << " from queue (position: " << queue_idx << ")" << std::endl;
+    const struct sector *sector = queue.arr[queue_idx]; 
+    queue_idx++;
 
-  for (usize i = 0; i < sector->nwalls; i++) {
-    const struct wall *wall = &sector->walls[i];
+    for (usize i = 0; i < sector->nwalls; i++) {
+      const struct wall *wall = &sector->walls[i];
 
-    std::clog << std::endl << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
+      std::clog << std::endl << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
 
-    v2 cam_a = world_to_camera(wall->a),
-       cam_b = world_to_camera(wall->b);
+      v2 cam_a = world_to_camera(wall->a),
+         cam_b = world_to_camera(wall->b);
 
-    std::clog << "\tCam " << " [" << cam_a.x << ", " << cam_a.y << " | "<< cam_b.x << ", " << cam_b.y << "]" << std::endl;
+      std::clog << "\tCam " << " [" << cam_a.x << ", " << cam_a.y << " | "<< cam_b.x << ", " << cam_b.y << "]" << std::endl;
     
-    if (cam_a.y < 0 && cam_b.y < 0) {
-      std::clog << "\tCulled " << i << std::endl;
-      continue;
+      if (cam_a.y < 0 && cam_b.y < 0) {
+        std::clog << "\tCulled " << i << std::endl;
+        continue;
+      }
+    
+      draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i));
+
+      if (wall->viewportal) {
+        std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << std::endl;
+        queue.arr[queue.size] = &state.sectors.arr[wall->viewportal - 1];
+        queue.size++;
+      }
     }
-    
-    draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i));
-
   }
 }
 
@@ -249,15 +288,23 @@ int main(int argc, char* argv[]) {
 
   init_SDL();
   
-  state.sectors.n = 1;
-  state.sectors.arr[0] = (struct sector) {state.walls.arr, 5, 1, 0.0f, 4.0f};
+  state.sectors.n = 2;
+  //TEST level
+  state.sectors.arr[0] = (struct sector) {state.walls.arr, 4, 1, 0.0f, 4.0f};
+  state.sectors.arr[1] = (struct sector) {&state.walls.arr[4], 5, 2, 0.0f, 4.0f};
 
-  state.walls.n = 5;
-  state.walls.arr[0] = (struct wall) {{3,5}, {3,3}, 0};
-  state.walls.arr[1] = (struct wall) {{3,3}, {3,0}, 0};
-  state.walls.arr[2] = (struct wall) {{3,0}, {0,0}, 0};
-  state.walls.arr[3] = (struct wall) {{0,0}, {0,5}, 0};
-  state.walls.arr[4] = (struct wall) {{0,5}, {3,5}, 0};
+  state.walls.n = 9;
+
+  state.walls.arr[0] = (struct wall) {{0,0 }, {5, 0}, 0};
+  state.walls.arr[1] = (struct wall) {{5,0 }, {5, 7}, 0};
+  state.walls.arr[2] = (struct wall) {{5,7 }, {0, 7}, 2};
+  state.walls.arr[3] = (struct wall) {{0,7 }, {0, 0}, 0};
+  
+  state.walls.arr[4] = (struct wall) {{5,7 }, {5,11}, 0};
+  state.walls.arr[5] = (struct wall) {{5,11}, {3,13}, 0};
+  state.walls.arr[6] = (struct wall) {{3,13}, {1,13}, 0};
+  state.walls.arr[7] = (struct wall) {{1,13}, {0,11}, 0};
+  state.walls.arr[8] = (struct wall) {{0,11}, {0, 7}, 0}; 
 
   state.camera.pos = (v2) {2, 2};
   state.camera.angle = 0;
@@ -285,7 +332,7 @@ int main(int argc, char* argv[]) {
       state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.01}, -state.camera.angle));
 
     state.camera.angle = normalise_angle(state.camera.angle);
-    
+    std::clog <<"CAMERA INSIDE:" << ((inside_sector(state.camera.pos, &state.sectors.arr[state.camera.sector])) ? "YES" : "NO") << std::endl;  
 
     //memset(state.pixels, 0xFF, SCREEN_WIDTH *SCREEN_HEIGHT * sizeof(u32));
     clear_pixels();
