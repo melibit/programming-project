@@ -108,17 +108,17 @@ struct {
   struct walls walls;
 } state;
 
-//-1: left, 0: inside, 2: right
-static inline int point_wall_side(v2 p, v2 a, v2 b) {
-  return -(((p.x - a.x) * (b.y - a.y)) - ((p.y - a.y) * (b.x - a.x)));
+
+static inline f32 point_wall_side(v2 p, v2 a, v2 b) {
+  return -(((p.x - a.x) * (b.y - a.y)) 
+          - ((p.y - a.y) * (b.x - a.x)));
 } 
-//https://wrfranklin.org/Research/Short_Notes/pnpoly.html
-// ???
 
 static inline bool inside_sector(v2 p, const struct sector *sector) {
   for (usize i = 0; i < sector->nwalls; i++) {
     const struct wall *wall = &sector->walls[i];
-    if (point_side(p, wall->a, wall->b) > 0)
+    std::clog << "\tpoint wall side @ " << i << "=" << point_wall_side(p, wall->a, wall->b) << "\n" << std::endl;
+    if (point_wall_side(p, wall->a, wall->b) <= 0.0f)
       return false;
   }
   return true;
@@ -263,7 +263,7 @@ void render() {
     
       draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i));
 
-      if (wall->viewportal) {
+      if (wall->viewportal && queue.size < 2) {
         std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << std::endl;
         queue.arr[queue.size] = &state.sectors.arr[wall->viewportal - 1];
         queue.size++;
@@ -290,8 +290,8 @@ int main(int argc, char* argv[]) {
   
   state.sectors.n = 2;
   //TEST level
-  state.sectors.arr[0] = (struct sector) {state.walls.arr, 4, 1, 0.0f, 4.0f};
-  state.sectors.arr[1] = (struct sector) {&state.walls.arr[4], 5, 2, 0.0f, 4.0f};
+  state.sectors.arr[0] = (struct sector) {state.walls.arr,     4, 1, 0.0f, 4.0f};
+  state.sectors.arr[1] = (struct sector) {&state.walls.arr[4], 6, 2, 0.0f, 4.0f};
 
   state.walls.n = 9;
 
@@ -300,11 +300,12 @@ int main(int argc, char* argv[]) {
   state.walls.arr[2] = (struct wall) {{5,7 }, {0, 7}, 2};
   state.walls.arr[3] = (struct wall) {{0,7 }, {0, 0}, 0};
   
-  state.walls.arr[4] = (struct wall) {{5,7 }, {5,11}, 0};
-  state.walls.arr[5] = (struct wall) {{5,11}, {3,13}, 0};
-  state.walls.arr[6] = (struct wall) {{3,13}, {1,13}, 0};
-  state.walls.arr[7] = (struct wall) {{1,13}, {0,11}, 0};
-  state.walls.arr[8] = (struct wall) {{0,11}, {0, 7}, 0}; 
+  state.walls.arr[4] = (struct wall) {{0,7 }, {5,7 }, 1};
+  state.walls.arr[5] = (struct wall) {{5,7 }, {5,11}, 0};
+  state.walls.arr[6] = (struct wall) {{5,11}, {3,13}, 0};
+  state.walls.arr[7] = (struct wall) {{3,13}, {1,13}, 0};
+  state.walls.arr[8] = (struct wall) {{1,13}, {0,11}, 0};
+  state.walls.arr[9] = (struct wall) {{0,11}, {0, 7}, 0}; 
 
   state.camera.pos = (v2) {2, 2};
   state.camera.angle = 0;
@@ -332,8 +333,12 @@ int main(int argc, char* argv[]) {
       state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.01}, -state.camera.angle));
 
     state.camera.angle = normalise_angle(state.camera.angle);
-    std::clog <<"CAMERA INSIDE:" << ((inside_sector(state.camera.pos, &state.sectors.arr[state.camera.sector])) ? "YES" : "NO") << std::endl;  
-
+    if (!inside_sector(state.camera.pos, &state.sectors.arr[state.camera.sector])) {
+        for (usize i = 0; i < state.sectors.n; i++) {
+            if (inside_sector(state.camera.pos, &state.sectors.arr[i]))
+                state.camera.sector = i;
+      }
+    }
     //memset(state.pixels, 0xFF, SCREEN_WIDTH *SCREEN_HEIGHT * sizeof(u32));
     clear_pixels();
 
