@@ -147,6 +147,10 @@ static i32 load_level(char *path) {
 
     sscanf(line, "%f %f %f %f %u", &state.walls.arr[i].a.x, &state.walls.arr[i].a.y, &state.walls.arr[i].b.x, &state.walls.arr[i].b.y, &state.walls.arr[i].viewportal);
   }
+
+  fgets(line, sizeof(line), f);
+  sscanf(line, "%f %f %f", &state.camera.pos.x, &state.camera.pos.y, &state.camera.angle);
+
   fclose(f);
   return 1;
 }
@@ -242,14 +246,18 @@ static inline v2 scale_vector(v2 v, f32 sf) {
 }
 
 
-#define SCALE_FACTOR 30
+#define SCALE_FACTOR 10
 
-static inline u32 get_test_colour(u32 i) {
+u32 hash(u32 x) {
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = (x >> 16) ^ x;
+    return x;
+}
+static inline u32 get_test_colour(u32 w, u32 s) {
   u32 a = 0xFF;
-  u32 b = 0xFF * (i % 2);
-  u32 g = (0xFF/3) * ((i+1) % 4);
-  u32 r = (0xFF/2) * (i % 3);
-  return a << 24 | b << 16 | g << 8 | r; 
+  u32 x = 0xCE * hash(w+1 + hash(s));
+  return a << 24 | x; 
 }
 
 static inline v2i transform_to_map(v2 v, f32 sf) {
@@ -307,8 +315,14 @@ void render() {
         std::clog << "\tCulled " << i << std::endl;
         continue;
       }
+
+      f32 grad = tanf(PI-(HFOV/2.0f));
+      if ((cam_a.y < grad*cam_a.x && cam_b.y < grad*cam_b.x) || (cam_a.y < -grad*cam_a.x && cam_b.y < -grad*cam_b.x)) {
+        std::clog << "\t Culled" << i << std::endl;
+        continue;
+      }
       
-      draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i));
+      draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i, sector->id));
 
       if (wall->viewportal && queue.size < MAX_SECTORS && !(rendered_sectors[wall->viewportal - 1])) {
         std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << std::endl;
@@ -357,11 +371,11 @@ int main(int argc, char* argv[]) {
     state.walls.arr[7] = (struct wall) {{3,13}, {1,13}, 0};
     state.walls.arr[8] = (struct wall) {{1,13}, {0,11}, 0};
     state.walls.arr[9] = (struct wall) {{0,11}, {0, 7}, 0}; 
+  
+    state.camera.pos = (v2) {2, 2};
+    state.camera.angle = 0;
 
   }
-  
-  state.camera.pos = (v2) {2, 2};
-  state.camera.angle = 0;
 
   state.pixels = (u32 *) malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
     
@@ -377,9 +391,9 @@ int main(int argc, char* argv[]) {
     
     const bool *keystate = SDL_GetKeyboardState(NULL);
     if (keystate[SDL_SCANCODE_LEFT]) 
-      state.camera.angle -= 0.01;
+      state.camera.angle -= 0.001;
     if (keystate[SDL_SCANCODE_RIGHT])
-      state.camera.angle += 0.01;
+      state.camera.angle += 0.001;
     if (keystate[SDL_SCANCODE_UP])
       state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, 0.01}, -state.camera.angle));
     if (keystate[SDL_SCANCODE_DOWN])
