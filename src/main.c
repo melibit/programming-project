@@ -53,9 +53,9 @@ static inline v2i add_v2i(v2i u, v2i v) {
   return (v2i) { u.x + v.x, u.y + v.y };
 }
 
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
-#define WINDOW_SCALE 2
+#define SCREEN_WIDTH 1440
+#define SCREEN_HEIGHT 1080
+#define WINDOW_SCALE 1.5
 
 #define MAX_SECTORS 64
 #define MAX_WALLS 512
@@ -231,10 +231,14 @@ static inline v2 rotate_vector(v2 u, f32 a) {
 static inline v2 world_to_camera(v2 p) {
   const v2 u = { p.x - state.camera.pos.x, p.y - state.camera.pos.y }; // Translate
   return rotate_vector(u, state.camera.angle);
-  //return (v2) { //Rotate
-  //  u.x * sinf(state.camera.angle) - u.y * cosf(state.camera.angle),
-  //  u.x * cosf(state.camera.angle) + u.y * sinf(state.camera.angle)
-  //}; 
+}
+
+static inline f32 screen_to_angle(u32 x) {
+  return ((x / SCREEN_WIDTH) - 0.5) * HFOV;
+}
+
+static inline u32 angle_to_screen(f32 a) {
+  return (u32) ((a/HFOV) + 0.5) * SCREEN_WIDTH;
 }
 
 static inline f32 normalise_angle(f32 a) {
@@ -246,11 +250,12 @@ static inline v2 scale_vector(v2 v, f32 sf) {
 }
 
 
-#define SCALE_FACTOR 10
+#define SCALE_FACTOR 30
 
+// https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
 u32 hash(u32 x) {
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
-    x = ((x >> 16) ^ x) * 0x45d9f3b;
+    x = ((x >> 16) ^ x) * 0x45D9F3B;
+    x = ((x >> 16) ^ x) * 0x45D9F3B;
     x = (x >> 16) ^ x;
     return x;
 }
@@ -273,9 +278,21 @@ static inline void draw_map_pixel(v2 a, f32 sf, u32 colour) {
   draw_pixel(transform_to_map(a, sf), colour);
 }
 
+// https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
+static inline v2 intersect_lines(v2 a0, v2 a1, v2 b0, b2 b1) {
+  const f32 x1 = a0.x, x2 = a1.x, x3 = b0.x, x4 = b1.x, y1 = a0.y, y2 = a1.y, y3 = b0.y, y4 = b1.y;
+  
+  const f32 denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+  if (fabsf(denom) < 1e-6)
+    return (v2) (NAN, NAN) // avoid division by 0; lines are parallel 
+  
+  v2 p;
+  p.x = ((x1*y2 - y1*x2) * (x3 - x4) - (x1 - x2) * (x3*y4 - y3*x4))/denom;
+  p.y = ((x1*y2 - y1*x2) * (y3 - y4) - (y1 - y2) * (x3*y4 - y3*x4))/denom;
+  return p;
+}
+
 void render() {
-  //draw_line({100, 100}, {300, 450}, 0xFFFF0000);
-    
   std::clog << std::endl << std::endl << std::endl << state.camera.angle << std::endl;
 
   std::clog << "Pos " << "[" << state.camera.pos.x << ", " << state.camera.pos.y << "]" << " Angle " << state.camera.angle << " Direction " << rotate_vector({1, 1}, state.camera.angle).x << ", " << rotate_vector({1, 1}, state.camera.angle).y << std::endl;   
@@ -323,6 +340,12 @@ void render() {
       }
       
       draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i, sector->id));
+      
+      for (u32 x = 0; x <= SCREEN_WIDTH-1; x++) {
+        f32 a = screen_to_angle(x);
+        
+
+      }
 
       if (wall->viewportal && queue.size < MAX_SECTORS && !(rendered_sectors[wall->viewportal - 1])) {
         std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << std::endl;
