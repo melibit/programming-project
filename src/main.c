@@ -6,7 +6,7 @@
 #include <iostream>
 #include <fstream>
 
-//#define _DEBUG
+#define _DEBUG
 
 typedef float f32;
 typedef double f64;
@@ -111,7 +111,7 @@ struct {
 
 
 static i32 load_level(char *path) {
-  std::clog << "Loading Level: " << path << std::endl;
+  std::clog << "Loading Level: " << path << "\n";
   FILE *f = fopen(path, "r");
   if (!f)
     return -1;
@@ -120,21 +120,21 @@ static i32 load_level(char *path) {
 
   fgets(line, sizeof(line), f); //level name (ignore for now)
     
-  std::clog << "\tLevel Name: " << line << std::endl;
+  std::clog << "\tLevel Name: " << line << "\n";
 
   //Sector definitions
   fgets(line, sizeof(line), f); //number of sectors
   sscanf(line, "%u", &state.sectors.n);
-  std::clog << "\tLoading " << state.sectors.n << " Sectors" << std::endl;
+  std::clog << "\tLoading " << state.sectors.n << " Sectors" << "\n";
   for (usize i = 0; i < state.sectors.n; i++) {
     fgets(line, sizeof(line), f);
       
-    std::clog <<"\t\t Loading " << line << std::endl;
+    std::clog <<"\t\t Loading " << line << "\n";
 
     usize wall_start = 0;
     sscanf(line, "%u %u %u %f %f", &wall_start, &state.sectors.arr[i].nwalls, &state.sectors.arr[i].id, &state.sectors.arr[i].zfloor, &state.sectors.arr[i].zceil);
       
-    std::clog << "\t\t\tWALL_START " << wall_start << ", NWALLS " << state.sectors.arr[i].nwalls << ", ID " << state.sectors.arr[i].id << std::endl;
+    std::clog << "\t\t\tWALL_START " << wall_start << ", NWALLS " << state.sectors.arr[i].nwalls << ", ID " << state.sectors.arr[i].id << "\n";
 
     state.sectors.arr[i].walls = &state.walls.arr[wall_start];
   }
@@ -163,7 +163,7 @@ static inline bool inside_sector(v2 p, const struct sector *sector) {
   for (usize i = 0; i < sector->nwalls; i++) {
     const struct wall *wall = &sector->walls[i];
     std::clog << "Testing wall " << i << "of Sector " << sector->id;
-    std::clog << "\tpoint wall side @ " << i << "=" << point_wall_side(p, wall->a, wall->b) << "\n" << std::endl;
+    std::clog << "\tpoint wall side @ " << i << "=" << point_wall_side(p, wall->a, wall->b) << "\n" << "\n";
     if (point_wall_side(p, wall->a, wall->b) <= 0.0f)
       return false;
   }
@@ -175,14 +175,14 @@ static void init_SDL() {
       
   state.window = SDL_CreateWindow("Programming Project", SCREEN_WIDTH * WINDOW_SCALE, SCREEN_HEIGHT * WINDOW_SCALE, 0);
   if (state.window == nullptr) {
-    std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << std::endl;
+    std::cerr << "SDL_CreateWindow Error: " << SDL_GetError() << "\n";
     SDL_Quit();
     exit(1);
   }
 
   state.renderer = SDL_CreateRenderer(state.window, NULL);
   if (state.renderer == nullptr) {
-    std::cerr << "SDL_CreateRenderer Error: " << SDL_GetError() << std::endl;
+    std::cerr << "SDL_CreateRenderer Error: " << SDL_GetError() << "\n";
     SDL_DestroyWindow(state.window);
     SDL_Quit();
     exit(1);
@@ -191,7 +191,7 @@ static void init_SDL() {
   state.texture = SDL_CreateTexture(state.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, SCREEN_WIDTH, SCREEN_HEIGHT);
 
   if (state.texture == nullptr) {
-    std::cerr << "SDL_CreateTexture Error: " << SDL_GetError() << std::endl;
+    std::cerr << "SDL_CreateTexture Error: " << SDL_GetError() << "\n";
     SDL_DestroyRenderer(state.renderer);
     SDL_DestroyWindow(state.window);
     SDL_Quit();
@@ -203,7 +203,7 @@ static inline void draw_pixel(v2i v, u32 colour) {
   if (v.y < SCREEN_HEIGHT && v.x < SCREEN_WIDTH && v.y >= 0 && v.x >= 0)
     state.pixels[v.y * SCREEN_WIDTH + v.x] = colour;
   //else 
-    //std::clog << "Attepted to draw off-screen @ " << v.x << ", " << v.y << std::endl;
+    //std::clog << "Attepted to draw off-screen @ " << v.x << ", " << v.y << "\n";
 } 
 
 // DDA (update to Bresenham for time save?)
@@ -278,10 +278,25 @@ static inline void draw_map_pixel(v2 a, f32 sf, u32 colour) {
   draw_pixel(transform_to_map(a, sf), colour);
 }
 
-void render() {
-  std::clog << std::endl << std::endl << std::endl << state.camera.angle << std::endl;
+static inline v2 intersect_lines(v2 a0, v2 a1, v2 b0, v2 b1) {
+  const f32 denom = (a0.x - a1.x) * (b0.y - b1.y) - (a0.y - a1.y) * (b0.x - b1.x);
+  std::cout << "Intersecting: [" << a0.x << ", " << a0.y << "] -> [" << a1.x << ", " << a1.y << "] with {" << b0.x << ", " << b0.y << "} -> {" << b1.x << ", " << b1.y << "]" << "\n";
+  if (fabsf(denom) < 1e-6)
+    return (v2) {NAN, NAN}; // avoid division by 0; lines are parallel 
 
-  std::clog << "Pos " << "[" << state.camera.pos.x << ", " << state.camera.pos.y << "]" << " Angle " << state.camera.angle << " Direction " << rotate_vector({1, 1}, state.camera.angle).x << ", " << rotate_vector({1, 1}, state.camera.angle).y << std::endl;   
+  v2 p;
+  p.x = ((a0.x*a1.y - a0.y*a1.x) * (b0.x - b1.x) - (a0.y - a1.y) * (b0.x*b1.y - b0.y*b1.x))/denom;
+  p.y = ((a0.x*a1.y - a0.y*a1.x) * (b0.y - b1.y) - (a0.y - a1.y) * (b0.x*b1.y - b0.y*b1.x))/denom;
+  std::cout << "\t" << "[" << p.x << ", " << p.y << "]" << "\n";
+  return p;
+}
+ 
+
+void render() {
+  std::clog << "\033[H\033[J";
+  std::clog << state.camera.angle << "\n";
+
+  std::clog << "Pos " << "[" << state.camera.pos.x << ", " << state.camera.pos.y << "]" << " Angle " << state.camera.angle << " Direction " << rotate_vector({1, 1}, state.camera.angle).x << ", " << rotate_vector({1, 1}, state.camera.angle).y << "\n";   
     
   draw_map_pixel(world_to_camera(state.camera.pos), SCALE_FACTOR, 0xFF00FF00);
   draw_map_line(world_to_camera(state.camera.pos), world_to_camera(add_v2(state.camera.pos, rotate_vector({0, 1}, -state.camera.angle))), SCALE_FACTOR, 0xC000FF00);
@@ -298,7 +313,7 @@ void render() {
   memset(rendered_sectors, 0, sizeof(rendered_sectors));
     
   while (queue_idx < queue.size) {
-    std::clog << "Rendering Sector " << queue.arr[queue_idx]->id << " from queue (position: " << queue_idx << ")" << std::endl;
+    std::clog << "Rendering Sector " << queue.arr[queue_idx]->id << " from queue (position: " << queue_idx << ")" << "\n";
     const struct sector *sector = queue.arr[queue_idx]; 
     queue_idx++;
       
@@ -306,26 +321,30 @@ void render() {
 
     for (usize i = 0; i < sector->nwalls; i++) {
       const struct wall *wall = &sector->walls[i];
-        
-      std::clog << std::endl << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
 
       v2 cam_a = world_to_camera(wall->a),
          cam_b = world_to_camera(wall->b);
-
-      std::clog << "\tCam " << " [" << cam_a.x << ", " << cam_a.y << " | "<< cam_b.x << ", " << cam_b.y << "]" << std::endl;
       
       if (cam_a.y < 0 && cam_b.y < 0) {
-        std::clog << "\tCulled " << i << std::endl;
         continue;
       }
 
-      f32 grad = tanf(PI-(HFOV/2.0f));
-      if ((cam_a.y < grad*cam_a.x && cam_b.y < grad*cam_b.x) || (cam_a.y < -grad*cam_a.x && cam_b.y < -grad*cam_b.x)) {
-        std::clog << "\t Culled" << i << std::endl;
+      const f32 angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f),
+                angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
+        
+      std::clog << "\n" << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
+      std::clog << "\tCam " << " [" << cam_a.x << ", " << cam_a.y << " | "<< cam_b.x << ", " << cam_b.y << "]" << "\n";
+      std::clog << "\t\t ANGLE: " << angle_a << " | " << angle_b << "\n";
+
+      if ((angle_a > HFOV/2.0f && angle_b > HFOV/2.0f) || (angle_a < -HFOV/2.0f && angle_b < -HFOV/2.0f)) {
         continue;
       }
       
-      draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_test_colour(i, sector->id));
+      //CLIP
+      v2 clip_a = cam_a,
+         clip_b = cam_b;
+      
+      draw_map_line(clip_a, clip_b, SCALE_FACTOR, get_test_colour(i, sector->id));
       
       for (u32 x = 0; x <= SCREEN_WIDTH-1; x++) {
         f32 a = screen_to_angle(x);
@@ -334,7 +353,7 @@ void render() {
       }
 
       if (wall->viewportal && queue.size < MAX_SECTORS && !(rendered_sectors[wall->viewportal - 1])) {
-        std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << std::endl;
+        std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << "\n";
         queue.arr[queue.size] = &state.sectors.arr[wall->viewportal - 1];
         queue.size++;
       }
@@ -408,12 +427,12 @@ int main(int argc, char* argv[]) {
     if (keystate[SDL_SCANCODE_DOWN])
       state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.01}, -state.camera.angle));
     
-    std::clog << state.camera.sector << std::endl;
+    std::clog << state.camera.sector << "\n";
 
     state.camera.angle = normalise_angle(state.camera.angle);
     if (!inside_sector(state.camera.pos, &state.sectors.arr[state.camera.sector])) {
       for (usize i = 0; i < state.sectors.n; i++) {
-        std::clog << "\t" << i << std::endl;
+        std::clog << "\t" << i << "\n";
         if (inside_sector(state.camera.pos, &state.sectors.arr[i]))
           state.camera.sector = i;
       }
