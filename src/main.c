@@ -278,20 +278,6 @@ static inline void draw_map_pixel(v2 a, f32 sf, u32 colour) {
   draw_pixel(transform_to_map(a, sf), colour);
 }
 
-// https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
-static inline v2 intersect_lines(v2 a0, v2 a1, v2 b0, b2 b1) {
-  const f32 x1 = a0.x, x2 = a1.x, x3 = b0.x, x4 = b1.x, y1 = a0.y, y2 = a1.y, y3 = b0.y, y4 = b1.y;
-  
-  const f32 denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
-  if (fabsf(denom) < 1e-6)
-    return (v2) (NAN, NAN) // avoid division by 0; lines are parallel 
-  
-  v2 p;
-  p.x = ((x1*y2 - y1*x2) * (x3 - x4) - (x1 - x2) * (x3*y4 - y3*x4))/denom;
-  p.y = ((x1*y2 - y1*x2) * (y3 - y4) - (y1 - y2) * (x3*y4 - y3*x4))/denom;
-  return p;
-}
-
 void render() {
   std::clog << std::endl << std::endl << std::endl << state.camera.angle << std::endl;
 
