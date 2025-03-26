@@ -53,8 +53,8 @@ static inline v2i add_v2i(v2i u, v2i v) {
   return (v2i) { u.x + v.x, u.y + v.y };
 }
 
-#define SCREEN_WIDTH 640
-#define SCREEN_HEIGHT 480
+#define SCREEN_WIDTH 1920
+#define SCREEN_HEIGHT 1080
 #define WINDOW_SCALE 1
 
 #define MAX_SECTORS 64
@@ -232,12 +232,8 @@ static inline v2 world_to_camera(v2 p) {
   return rotate_vector(u, state.camera.angle);
 }
 
-static inline f32 screen_to_angle(u32 x) {
-  return ((x / SCREEN_WIDTH) - 0.5) * HFOV;
-}
-
 static inline u32 angle_to_screen(f32 a) {
-  return (u32) ((a/HFOV) + 0.5) * SCREEN_WIDTH;
+  return (u32) ((1-((a/HFOV) + 0.5f)) * (f32)SCREEN_WIDTH);
 }
 
 static inline f32 normalise_angle(f32 a) {
@@ -249,7 +245,7 @@ static inline v2 scale_vector(v2 v, f32 sf) {
 }
 
 
-#define SCALE_FACTOR 30
+#define SCALE_FACTOR 10
 
 // https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
 u32 hash(u32 x) {
@@ -315,7 +311,7 @@ void render() {
    
   struct render_queue queue;
   memset(&queue, 0, sizeof(queue));
-    
+  
   queue.arr[0] = &state.sectors.arr[state.camera.sector];
   queue.size = 1;
     
@@ -323,6 +319,9 @@ void render() {
     
   bool rendered_sectors[MAX_SECTORS];
   memset(rendered_sectors, 0, sizeof(rendered_sectors));
+  
+  bool rendered_verlines[SCREEN_WIDTH];
+  memset(rendered_verlines, 0, sizeof(rendered_verlines));
     
   while (queue_idx < queue.size) {
     std::clog << "Rendering Sector " << queue.arr[queue_idx]->id << " from queue (position: " << queue_idx << ")" << "\n";
@@ -360,20 +359,21 @@ void render() {
 
       if (angle_a >  HFOV/2.0f) { 
         clip_a = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -HFOV/2.0f));
-        angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f);
+        angle_a = normalise_angle(atan2f(clip_a.y, clip_a.x) - PI / 2.0f);
       }
       if (angle_a < -HFOV/2.0f) { 
         clip_a = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024},  HFOV/2.0f));
-        angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f);
+        angle_a = normalise_angle(atan2f(clip_a.y, clip_a.x) - PI / 2.0f);
       }
       if (angle_b >  HFOV/2.0f) {
         clip_b = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -HFOV/2.0f));
-        angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
+        angle_b = normalise_angle(atan2f(clip_b.y, clip_b.x) - PI / 2.0f);
       }
       if (angle_b < -HFOV/2.0f) { 
         clip_b = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024},  HFOV/2.0f));
-        angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
+        angle_b = normalise_angle(atan2f(clip_b.y, clip_b.x) - PI / 2.0f);
       }
+
       if (clip_a.y < 0 || clip_b.y < 0) 
         continue;
 
@@ -382,9 +382,19 @@ void render() {
 
       draw_map_line(clip_a, clip_b, SCALE_FACTOR, get_map_colour(i, sector->id));
       
-      for (u32 x = angle_to_screen(min(angle_a, angle_b)); x < angle_to_screen(max(angle_a, angle_b)); x++) {
-        f32 a = screen_to_angle(x);
-        draw_pixel({x, SCREEN_HEIGHT/2}, get_map_colour(i, sector->id));
+      for (f32 a = max(angle_a, angle_b); a > min(angle_a, angle_b); a-= HFOV/SCREEN_WIDTH) {
+        if (angle_to_screen(a) >= SCREEN_WIDTH)
+          continue;
+        
+        const v2 isect = intersect_line_segments(clip_a, clip_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, a));
+        const f32 dist = sqrtf(isect.x * isect.x + isect.y * isect.y);
+        const f32 h = SCREEN_HEIGHT / dist;
+        const i32 y0 = max((SCREEN_HEIGHT / 2) - (h / 2), 0),
+                  y1 = min((SCREEN_HEIGHT / 2) + (h / 2), SCREEN_HEIGHT - 1);
+
+        if (!rendered_verlines[angle_to_screen(a)])
+          draw_line({(i32)angle_to_screen(a), y0}, {(i32)angle_to_screen(a), y1}, get_map_colour(i, sector->id));
+        rendered_verlines[angle_to_screen(a)] = true;
       }
 
       if (wall->viewportal && queue.size < MAX_SECTORS && !(rendered_sectors[wall->viewportal - 1])) {
@@ -407,19 +417,18 @@ int main(int argc, char* argv[]) {
     std::ofstream nullstream;
     std::clog.rdbuf(nullstream.rdbuf());
   #endif
-
+  
   memset(&state, 0, sizeof(state));
-
-  init_SDL();
-    
+  
   if (argc > 1)
     load_level(argv[1]);
-
   else {
     std::cout << "Improper Usage\n\t" << argv[0] << " [Path/To/Level.dat]" << std::endl;
     return -1;
   }
 
+  init_SDL();
+    
   state.pixels = (u32 *) malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
     
   while (!state.quit) {
