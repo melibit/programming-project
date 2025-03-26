@@ -53,14 +53,14 @@ static inline v2i add_v2i(v2i u, v2i v) {
   return (v2i) { u.x + v.x, u.y + v.y };
 }
 
-#define SCREEN_WIDTH 1440
-#define SCREEN_HEIGHT 1080
-#define WINDOW_SCALE 1.5
+#define SCREEN_WIDTH 640
+#define SCREEN_HEIGHT 480
+#define WINDOW_SCALE 1
 
 #define MAX_SECTORS 64
 #define MAX_WALLS 512
 
-#define HFOV (PI / 2.0f)
+#define HFOV (PI / 3.0f)
 #define VFOV (0.5f)
 
 struct wall {
@@ -258,7 +258,7 @@ u32 hash(u32 x) {
     x = (x >> 16) ^ x;
     return x;
 }
-static inline u32 get_test_colour(u32 w, u32 s) {
+static inline u32 get_map_colour(u32 w, u32 s) {
   u32 a = 0xFF;
   u32 x = 0xCE * hash(w+1 + hash(s));
   return a << 24 | x; 
@@ -312,7 +312,6 @@ void render() {
   std::clog << "Pos " << "[" << state.camera.pos.x << ", " << state.camera.pos.y << "]" << " Angle " << state.camera.angle << " Direction " << rotate_vector({1, 1}, state.camera.angle).x << ", " << rotate_vector({1, 1}, state.camera.angle).y << "\n";   
     
   draw_map_pixel(world_to_camera(state.camera.pos), SCALE_FACTOR, 0xFF00FF00);
-  draw_map_line(world_to_camera(state.camera.pos), world_to_camera(add_v2(state.camera.pos, rotate_vector({0, 1}, -state.camera.angle))), SCALE_FACTOR, 0xC000FF00);
    
   struct render_queue queue;
   memset(&queue, 0, sizeof(queue));
@@ -359,27 +358,33 @@ void render() {
          clip_b = cam_b;
       
 
-      if (angle_a >  HFOV/2.0f)  
+      if (angle_a >  HFOV/2.0f) { 
         clip_a = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -HFOV/2.0f));
-      if (angle_a < -HFOV/2.0f)  
+        angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f);
+      }
+      if (angle_a < -HFOV/2.0f) { 
         clip_a = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024},  HFOV/2.0f));
-      if (angle_b >  HFOV/2.0f)  
+        angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f);
+      }
+      if (angle_b >  HFOV/2.0f) {
         clip_b = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -HFOV/2.0f));
-      if (angle_b < -HFOV/2.0f)  
+        angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
+      }
+      if (angle_b < -HFOV/2.0f) { 
         clip_b = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024},  HFOV/2.0f));
-      
+        angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
+      }
       if (clip_a.y < 0 || clip_b.y < 0) 
         continue;
 
       if (std::isnan(clip_a.x) || std::isnan(clip_b.x))
         continue;
 
-      draw_map_line(clip_a, clip_b, SCALE_FACTOR, get_test_colour(i, sector->id));
+      draw_map_line(clip_a, clip_b, SCALE_FACTOR, get_map_colour(i, sector->id));
       
-      for (u32 x = 0; x <= SCREEN_WIDTH-1; x++) {
+      for (u32 x = angle_to_screen(min(angle_a, angle_b)); x < angle_to_screen(max(angle_a, angle_b)); x++) {
         f32 a = screen_to_angle(x);
-        
-
+        draw_pixel({x, SCREEN_HEIGHT/2}, get_map_colour(i, sector->id));
       }
 
       if (wall->viewportal && queue.size < MAX_SECTORS && !(rendered_sectors[wall->viewportal - 1])) {
@@ -410,7 +415,8 @@ int main(int argc, char* argv[]) {
   if (argc > 1)
     load_level(argv[1]);
 
-  else {  
+  else {
+    std::cout << "Improper Usage\n\t" << argv[0] << " [Path/To/Level.dat]" << std::endl;
     return -1;
   }
 
@@ -428,9 +434,9 @@ int main(int argc, char* argv[]) {
     
     const bool *keystate = SDL_GetKeyboardState(NULL);
     if (keystate[SDL_SCANCODE_LEFT]) 
-      state.camera.angle -= 0.001;
-    if (keystate[SDL_SCANCODE_RIGHT])
       state.camera.angle += 0.001;
+    if (keystate[SDL_SCANCODE_RIGHT])
+      state.camera.angle -= 0.001;
     if (keystate[SDL_SCANCODE_UP])
       state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, 0.01}, -state.camera.angle));
     if (keystate[SDL_SCANCODE_DOWN])
