@@ -55,12 +55,12 @@ static inline v2i add_v2i(v2i u, v2i v) {
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
-#define WINDOW_SCALE 1
+#define WINDOW_SCALE 2
 
 #define MAX_SECTORS 64
 #define MAX_WALLS 512
 
-#define HFOV (PI / 3.0f)
+#define HFOV (PI / 4.0f)
 #define VFOV (0.5f)
 
 struct wall {
@@ -236,6 +236,10 @@ static inline u32 angle_to_screen(f32 a) {
   return (u32) ((1-((a/HFOV) + 0.5f)) * (f32)SCREEN_WIDTH);
 }
 
+static inline f32 screen_to_angle(u32 x) {
+  return (-(((f32)x / (f32)SCREEN_WIDTH) - 1.0f) - 0.5f) * HFOV;
+}
+
 static inline f32 normalise_angle(f32 a) {
   return a - (TAU * floorf((a + PI) / TAU));
 }
@@ -245,7 +249,7 @@ static inline v2 scale_vector(v2 v, f32 sf) {
 }
 
 
-#define SCALE_FACTOR 10
+#define SCALE_FACTOR 30
 
 // https://stackoverflow.com/questions/664014/what-integer-hash-function-are-good-that-accepts-an-integer-hash-key
 u32 hash(u32 x) {
@@ -298,7 +302,33 @@ static inline v2 intersect_line_segments(v2 p1, v2 p2, v2 p3, v2 p4) {
     return {p3.x + u*(p4.x - p4.x), p3.y + u*(p4.y - p3.y)};
   return {NAN, NAN};
 }
- 
+
+void render_map() {
+  struct render_queue queue; 
+  memset(&queue, 0, sizeof(queue));
+  
+  draw_map_pixel(world_to_camera(state.camera.pos), SCALE_FACTOR, 0xFF00FF00); 
+  
+  for (usize sec = 0; sec < state.sectors.n; sec++) {
+    const struct sector *sector = &state.sectors.arr[sec];
+    for (usize i = 0; i < sector->nwalls; i++) {
+      const struct wall *wall = &sector->walls[i];
+
+      v2 cam_a = world_to_camera(wall->a),
+         cam_b = world_to_camera(wall->b);
+      if (!wall->viewportal)
+        draw_map_line(cam_a, cam_b, SCALE_FACTOR, get_map_colour(i, sector->id));
+    }
+  }
+}
+
+u32 darken_colour(u32 colour, f32 factor) {
+  const u32 a =     ((colour & 0xFF000000) >> 24);
+  const u32 b = min(((colour & 0x00FF0000) >> 16) / factor, (colour & 0x00FF0000) >> 16); 
+  const u32 g = min(((colour & 0x0000FF00) >>  8) / factor, (colour & 0x0000FF00) >>  8);
+  const u32 r = min(((colour & 0x000000FF)      ) / factor, (colour & 0x000000FF)      );
+  return a << 24 | b << 16 | g << 8 | r;
+}
 
 void render() {
   state.frame++;
@@ -307,8 +337,6 @@ void render() {
 
   std::clog << "Pos " << "[" << state.camera.pos.x << ", " << state.camera.pos.y << "]" << " Angle " << state.camera.angle << " Direction " << rotate_vector({1, 1}, state.camera.angle).x << ", " << rotate_vector({1, 1}, state.camera.angle).y << "\n";   
     
-  draw_map_pixel(world_to_camera(state.camera.pos), SCALE_FACTOR, 0xFF00FF00);
-   
   struct render_queue queue;
   memset(&queue, 0, sizeof(queue));
   
@@ -320,9 +348,9 @@ void render() {
   bool rendered_sectors[MAX_SECTORS];
   memset(rendered_sectors, 0, sizeof(rendered_sectors));
   
-  bool rendered_verlines[SCREEN_WIDTH];
-  memset(rendered_verlines, 0, sizeof(rendered_verlines));
-    
+  f32 rendered_verline_dists[SCREEN_WIDTH];
+  memset(rendered_verline_dists, 0, sizeof(rendered_verline_dists));
+
   while (queue_idx < queue.size) {
     std::clog << "Rendering Sector " << queue.arr[queue_idx]->id << " from queue (position: " << queue_idx << ")" << "\n";
     const struct sector *sector = queue.arr[queue_idx]; 
@@ -374,33 +402,39 @@ void render() {
         angle_b = normalise_angle(atan2f(clip_b.y, clip_b.x) - PI / 2.0f);
       }
 
-      if (clip_a.y < 0 || clip_b.y < 0) 
+      if (clip_a.y < 0 && clip_b.y < 0) 
         continue;
 
       if (std::isnan(clip_a.x) || std::isnan(clip_b.x))
         continue;
-
-      draw_map_line(clip_a, clip_b, SCALE_FACTOR, get_map_colour(i, sector->id));
       
-      for (f32 a = max(angle_a, angle_b); a > min(angle_a, angle_b); a-= HFOV/SCREEN_WIDTH) {
-        if (angle_to_screen(a) >= SCREEN_WIDTH)
+      if (wall->viewportal) {
+        if (queue.size < MAX_SECTORS && !(rendered_sectors[wall->viewportal - 1])) {
+          std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << "\n";
+          queue.arr[queue.size] = &state.sectors.arr[wall->viewportal - 1];
+          queue.size++;
+        }
+        continue;
+      }
+      
+      for (u32 x = angle_to_screen(max(angle_a, angle_b)) + 1; x <= angle_to_screen(min(angle_a, angle_b)); x++) {
+        f32 a = screen_to_angle(x);
+        if (x >= SCREEN_WIDTH)
           continue;
         
-        const v2 isect = intersect_line_segments(clip_a, clip_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, a));
-        const f32 dist = sqrtf(isect.x * isect.x + isect.y * isect.y);
+        const v2 isect = intersect_line_segments(clip_a, clip_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -a));
+        
+        const f32 dist = isect.y; //sqrtf(isect.x * isect.x + isect.y + isect.y);
+        //std::cout << isect.x << ", " << isect.y << " : "<< dist << "\n";
         const f32 h = SCREEN_HEIGHT / dist;
         const i32 y0 = max((SCREEN_HEIGHT / 2) - (h / 2), 0),
                   y1 = min((SCREEN_HEIGHT / 2) + (h / 2), SCREEN_HEIGHT - 1);
 
-        if (!rendered_verlines[angle_to_screen(a)])
-          draw_line({(i32)angle_to_screen(a), y0}, {(i32)angle_to_screen(a), y1}, get_map_colour(i, sector->id));
-        rendered_verlines[angle_to_screen(a)] = true;
-      }
-
-      if (wall->viewportal && queue.size < MAX_SECTORS && !(rendered_sectors[wall->viewportal - 1])) {
-        std::clog << "Added Sector " << (wall->viewportal - 1) << " to queue (position: " << queue.size << ")" << "\n";
-        queue.arr[queue.size] = &state.sectors.arr[wall->viewportal - 1];
-        queue.size++;
+        if (!rendered_verline_dists[x] || (dist - rendered_verline_dists[x]) <= 1e-3) {
+          draw_line({(i32)x, y0}, {(i32)x, y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
+          draw_line({(i32)x, 0 }, {(i32)x, y0}, 0xFF0F0F0F);
+          rendered_verline_dists[x] = dist;
+        }
       }
     }
   }
@@ -443,13 +477,17 @@ int main(int argc, char* argv[]) {
     
     const bool *keystate = SDL_GetKeyboardState(NULL);
     if (keystate[SDL_SCANCODE_LEFT]) 
-      state.camera.angle += 0.001;
+      state.camera.angle += 0.005;
     if (keystate[SDL_SCANCODE_RIGHT])
-      state.camera.angle -= 0.001;
-    if (keystate[SDL_SCANCODE_UP])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, 0.01}, -state.camera.angle));
-    if (keystate[SDL_SCANCODE_DOWN])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.01}, -state.camera.angle));
+      state.camera.angle -= 0.005;
+    if (keystate[SDL_SCANCODE_W])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, 0.03}, -state.camera.angle));
+    if (keystate[SDL_SCANCODE_S])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.03}, -state.camera.angle));
+    if (keystate[SDL_SCANCODE_A])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.03}, -state.camera.angle + (PI / 2.0f)));
+    if (keystate[SDL_SCANCODE_D])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.03}, -state.camera.angle - (PI / 2.0f)));
     
     std::clog << state.camera.sector << "\n";
 
@@ -464,8 +502,12 @@ int main(int argc, char* argv[]) {
     //memset(state.pixels, 0xFF, SCREEN_WIDTH *SCREEN_HEIGHT * sizeof(u32));
     clear_pixels();
 
-    render();
-
+    if (keystate[SDL_SCANCODE_M]) 
+        render_map();
+    else {
+      render();
+    }
+      
     SDL_UpdateTexture(state.texture, NULL, state.pixels, SCREEN_WIDTH * 4);
     SDL_RenderTextureRotated(state.renderer, state.texture, NULL, NULL, 0.0, NULL, SDL_FLIP_VERTICAL);
 
