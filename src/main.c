@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cmath>
+#include <ctime>
 
 #include <iostream>
 #include <fstream>
@@ -303,7 +304,7 @@ static inline v2 intersect_line_segments(v2 p1, v2 p2, v2 p3, v2 p4) {
   return {NAN, NAN};
 }
 
-void render_map() {
+static void render_map() {
   struct render_queue queue; 
   memset(&queue, 0, sizeof(queue));
   
@@ -322,7 +323,7 @@ void render_map() {
   }
 }
 
-u32 darken_colour(u32 colour, f32 factor) {
+static inline u32 darken_colour(u32 colour, f32 factor) {
   const u32 a =     ((colour & 0xFF000000) >> 24);
   const u32 b = min(((colour & 0x00FF0000) >> 16) / factor, (colour & 0x00FF0000) >> 16); 
   const u32 g = min(((colour & 0x0000FF00) >>  8) / factor, (colour & 0x0000FF00) >>  8);
@@ -330,7 +331,7 @@ u32 darken_colour(u32 colour, f32 factor) {
   return a << 24 | b << 16 | g << 8 | r;
 }
 
-void render() {
+static void render() {
   state.frame++;
   std::clog << "\033[H\033[J";
   std::clog << state.camera.angle << "\n";
@@ -440,13 +441,14 @@ void render() {
   }
 }
 
-void clear_pixels() {
+static void clear_pixels() {
   for (usize i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) {
     state.pixels[i] = 0xFF000000;
   }
 }
 
-int main(int argc, char* argv[]) {
+i32 main(int argc, char* argv[]) {
+  
   #ifndef _DEBUG 
     std::ofstream nullstream;
     std::clog.rdbuf(nullstream.rdbuf());
@@ -464,8 +466,14 @@ int main(int argc, char* argv[]) {
   init_SDL();
     
   state.pixels = (u32 *) malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
-    
+  
+  clock_t tstart, tend; 
+  tstart = clock();
+
   while (!state.quit) {
+    tstart = tend;
+    tend = clock();
+    f32 dt = (f32)(tend - tstart) / CLOCKS_PER_SEC;
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
       switch(e.type) {
@@ -476,19 +484,21 @@ int main(int argc, char* argv[]) {
     }
     
     const bool *keystate = SDL_GetKeyboardState(NULL);
-    if (keystate[SDL_SCANCODE_LEFT]) 
-      state.camera.angle += 0.005;
-    if (keystate[SDL_SCANCODE_RIGHT])
-      state.camera.angle -= 0.005;
-    if (keystate[SDL_SCANCODE_W])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, 0.03}, -state.camera.angle));
-    if (keystate[SDL_SCANCODE_S])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.03}, -state.camera.angle));
-    if (keystate[SDL_SCANCODE_A])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.03}, -state.camera.angle + (PI / 2.0f)));
-    if (keystate[SDL_SCANCODE_D])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -0.03}, -state.camera.angle - (PI / 2.0f)));
     
+    if (state.frame > 8) {
+    if (keystate[SDL_SCANCODE_LEFT]) 
+      state.camera.angle += PI/3 * dt;
+    if (keystate[SDL_SCANCODE_RIGHT])
+      state.camera.angle -= PI/3 * dt;
+    if (keystate[SDL_SCANCODE_W])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0,  3 * dt}, -state.camera.angle));
+    if (keystate[SDL_SCANCODE_S])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -3 * dt}, -state.camera.angle));
+    if (keystate[SDL_SCANCODE_A])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -3 * dt}, -state.camera.angle + (PI / 2.0f)));
+    if (keystate[SDL_SCANCODE_D])
+      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -3 * dt}, -state.camera.angle - (PI / 2.0f)));
+    }
     std::clog << state.camera.sector << "\n";
 
     state.camera.angle = normalise_angle(state.camera.angle);
