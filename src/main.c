@@ -485,20 +485,6 @@ i32 main(int argc, char* argv[]) {
     
     const bool *keystate = SDL_GetKeyboardState(NULL);
     
-    if (state.frame > 8) {
-    if (keystate[SDL_SCANCODE_LEFT]) 
-      state.camera.angle += PI/3 * dt;
-    if (keystate[SDL_SCANCODE_RIGHT])
-      state.camera.angle -= PI/3 * dt;
-    if (keystate[SDL_SCANCODE_W])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0,  3 * dt}, -state.camera.angle));
-    if (keystate[SDL_SCANCODE_S])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -3 * dt}, -state.camera.angle));
-    if (keystate[SDL_SCANCODE_A])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -3 * dt}, -state.camera.angle + (PI / 2.0f)));
-    if (keystate[SDL_SCANCODE_D])
-      state.camera.pos = add_v2(state.camera.pos, rotate_vector({0, -3 * dt}, -state.camera.angle - (PI / 2.0f)));
-    }
     std::clog << state.camera.sector << "\n";
 
     state.camera.angle = normalise_angle(state.camera.angle);
@@ -517,7 +503,28 @@ i32 main(int argc, char* argv[]) {
     else {
       render();
     }
-      
+    
+    if (state.frame < 8)
+      continue;
+
+    if (keystate[SDL_SCANCODE_LEFT]) 
+      state.camera.angle += PI/3 * dt;
+    if (keystate[SDL_SCANCODE_RIGHT])
+      state.camera.angle -= PI/3 * dt;
+    
+    v2 newpos = state.camera.pos;
+    
+    if (keystate[SDL_SCANCODE_W])
+      newpos = add_v2(newpos, rotate_vector({0,  3 * dt}, -state.camera.angle));
+    if (keystate[SDL_SCANCODE_S])
+      newpos = add_v2(newpos, rotate_vector({0, -3 * dt}, -state.camera.angle));
+    if (keystate[SDL_SCANCODE_A])
+      newpos = add_v2(newpos, rotate_vector({0, -3 * dt}, -state.camera.angle + (PI / 2.0f)));
+    if (keystate[SDL_SCANCODE_D])
+      newpos = add_v2(newpos, rotate_vector({0, -3 * dt}, -state.camera.angle - (PI / 2.0f)));
+   
+    state.camera.pos = newpos;
+
     SDL_UpdateTexture(state.texture, NULL, state.pixels, SCREEN_WIDTH * 4);
     SDL_RenderTextureRotated(state.renderer, state.texture, NULL, NULL, 0.0, NULL, SDL_FLIP_VERTICAL);
 
