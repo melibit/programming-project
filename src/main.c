@@ -6,7 +6,7 @@
 #include <iostream>
 #include <fstream>
 
-#define _DEBUG
+//#define _DEBUG
 
 typedef float f32;
 typedef double f64;
@@ -106,7 +106,8 @@ struct {
       
   struct sectors sectors;
   struct walls walls;
-
+  
+  u32 frame;
 } state;
 
 
@@ -276,6 +277,8 @@ static inline void draw_map_pixel(v2 a, f32 sf, u32 colour) {
   draw_pixel(transform_to_map(a, sf), colour);
 }
 
+// https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
+/*
 static inline v2 intersect_lines(v2 a0, v2 a1, v2 b0, v2 b1) {
   const f32 denom = (a0.x - a1.x) * (b0.y - b1.y) - (a0.y - a1.y) * (b0.x - b1.x);
   std::cout << "Intersecting: [" << a0.x << ", " << a0.y << "] -> [" << a1.x << ", " << a1.y << "] with {" << b0.x << ", " << b0.y << "} -> {" << b1.x << ", " << b1.y << "]" << "\n";
@@ -287,10 +290,22 @@ static inline v2 intersect_lines(v2 a0, v2 a1, v2 b0, v2 b1) {
   p.y = ((a0.x*a1.y - a0.y*a1.x) * (b0.y - b1.y) - (a0.y - a1.y) * (b0.x*b1.y - b0.y*b1.x))/denom;
   std::cout << "\t" << "[" << p.x << ", " << p.y << "]" << "\n";
   return p;
+}*/ 
+static inline v2 intersect_line_segments(v2 p1, v2 p2, v2 p3, v2 p4) {
+  const f32 t = ( (p1.x - p3.x) * (p3.y - p4.y) - (p1.y - p3.y) * (p3.x - p4.x) ) / 
+                ( (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x) ); 
+  const f32 u = ( (p1.x - p2.x) * (p1.y - p3.y) - (p1.y - p2.y) * (p1.x - p3.x) ) / 
+                ( (p1.x - p2.x) * (p3.y - p4.y) - (p1.y - p2.y) * (p3.x - p4.x));
+  if (t >= 0 && t <= 1)
+    return {p1.x + t*(p2.x - p1.x), p1.y + t*(p2.y - p1.y)};
+  if (u >= 0 && u <= 1)
+    return {p3.x + u*(p4.x - p4.x), p3.y + u*(p4.y - p3.y)};
+  return {NAN, NAN};
 }
  
 
 void render() {
+  state.frame++;
   std::clog << "\033[H\033[J";
   std::clog << state.camera.angle << "\n";
 
@@ -327,13 +342,13 @@ void render() {
         continue;
       }
 
-      const f32 angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f),
-                angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
+      f32 angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f),
+          angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
         
       if ((angle_a > HFOV/2.0f && angle_b > HFOV/2.0f) || (angle_a < -HFOV/2.0f && angle_b < -HFOV/2.0f)) {
         continue;
       }
-      
+     
       std::clog << "\n" << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
       std::clog << "\tCam " << " [" << cam_a.x << ", " << cam_a.y << " | "<< cam_b.x << ", " << cam_b.y << "]" << "\n";
       std::clog << "\t\t ANGLE: " << angle_a << " | " << angle_b << "\n";
@@ -344,10 +359,21 @@ void render() {
          clip_b = cam_b;
       
 
-      if (angle_a < -HFOV/2.0f) 
-        clip_a = intersect_lines(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1},  HFOV/2.0f));
-      if (angle_b > HFOV/2.0f)
-        clip_b = intersect_lines(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1}, -HFOV/2.0f));
+      if (angle_a >  HFOV/2.0f)  
+        clip_a = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -HFOV/2.0f));
+      if (angle_a < -HFOV/2.0f)  
+        clip_a = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024},  HFOV/2.0f));
+      if (angle_b >  HFOV/2.0f)  
+        clip_b = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -HFOV/2.0f));
+      if (angle_b < -HFOV/2.0f)  
+        clip_b = intersect_line_segments(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024},  HFOV/2.0f));
+      
+      if (clip_a.y < 0 || clip_b.y < 0) 
+        continue;
+
+      if (std::isnan(clip_a.x) || std::isnan(clip_b.x))
+        continue;
+
       draw_map_line(clip_a, clip_b, SCALE_FACTOR, get_test_colour(i, sector->id));
       
       for (u32 x = 0; x <= SCREEN_WIDTH-1; x++) {
@@ -385,28 +411,7 @@ int main(int argc, char* argv[]) {
     load_level(argv[1]);
 
   else {  
-    state.sectors.n = 2;
-    //TEST level
-    state.sectors.arr[0] = (struct sector) {state.walls.arr,     4, 1, 0.0f, 4.0f};
-    state.sectors.arr[1] = (struct sector) {&state.walls.arr[4], 6, 2, 0.0f, 4.0f};
-
-    state.walls.n = 9;
-
-    state.walls.arr[0] = (struct wall) {{0,0 }, {5, 0}, 0};
-    state.walls.arr[1] = (struct wall) {{5,0 }, {5, 7}, 0};
-    state.walls.arr[2] = (struct wall) {{5,7 }, {0, 7}, 2};
-    state.walls.arr[3] = (struct wall) {{0,7 }, {0, 0}, 0};
-  
-    state.walls.arr[4] = (struct wall) {{0,7 }, {5,7 }, 1};
-    state.walls.arr[5] = (struct wall) {{5,7 }, {5,11}, 0};
-    state.walls.arr[6] = (struct wall) {{5,11}, {3,13}, 0};
-    state.walls.arr[7] = (struct wall) {{3,13}, {1,13}, 0};
-    state.walls.arr[8] = (struct wall) {{1,13}, {0,11}, 0};
-    state.walls.arr[9] = (struct wall) {{0,11}, {0, 7}, 0}; 
-  
-    state.camera.pos = (v2) {2, 2};
-    state.camera.angle = 0;
-
+    return -1;
   }
 
   state.pixels = (u32 *) malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
