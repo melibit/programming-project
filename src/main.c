@@ -162,8 +162,6 @@ static inline f32 point_wall_side(v2 p, v2 a, v2 b) {
 static inline bool inside_sector(v2 p, const struct sector *sector) {
   for (usize i = 0; i < sector->nwalls; i++) {
     const struct wall *wall = &sector->walls[i];
-    std::clog << "Testing wall " << i << "of Sector " << sector->id;
-    std::clog << "\tpoint wall side @ " << i << "=" << point_wall_side(p, wall->a, wall->b) << "\n" << "\n";
     if (point_wall_side(p, wall->a, wall->b) <= 0.0f)
       return false;
   }
@@ -332,18 +330,24 @@ void render() {
       const f32 angle_a = normalise_angle(atan2f(cam_a.y, cam_a.x) - PI / 2.0f),
                 angle_b = normalise_angle(atan2f(cam_b.y, cam_b.x) - PI / 2.0f);
         
-      std::clog << "\n" << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
-      std::clog << "\tCam " << " [" << cam_a.x << ", " << cam_a.y << " | "<< cam_b.x << ", " << cam_b.y << "]" << "\n";
-      std::clog << "\t\t ANGLE: " << angle_a << " | " << angle_b << "\n";
-
       if ((angle_a > HFOV/2.0f && angle_b > HFOV/2.0f) || (angle_a < -HFOV/2.0f && angle_b < -HFOV/2.0f)) {
         continue;
       }
+      
+      std::clog << "\n" << "Wall " << i << " [" << wall->a.x << ", " << wall->a.y << " | "<< wall->b.x << ", " << wall->b.y << "]" << std::endl;
+      std::clog << "\tCam " << " [" << cam_a.x << ", " << cam_a.y << " | "<< cam_b.x << ", " << cam_b.y << "]" << "\n";
+      std::clog << "\t\t ANGLE: " << angle_a << " | " << angle_b << "\n";
+      std::clog << "\t\t\t HFOV " << HFOV << " | " << HFOV/2.0f << std::endl;
       
       //CLIP
       v2 clip_a = cam_a,
          clip_b = cam_b;
       
+
+      if (angle_a < -HFOV/2.0f) 
+        clip_a = intersect_lines(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1},  HFOV/2.0f));
+      if (angle_b > HFOV/2.0f)
+        clip_b = intersect_lines(cam_a, cam_b, world_to_camera(state.camera.pos), rotate_vector({0, 1}, -HFOV/2.0f));
       draw_map_line(clip_a, clip_b, SCALE_FACTOR, get_test_colour(i, sector->id));
       
       for (u32 x = 0; x <= SCREEN_WIDTH-1; x++) {
