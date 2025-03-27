@@ -352,9 +352,11 @@ static void render() {
   memset(rendered_sectors, 0, sizeof(rendered_sectors));
   
   f32 rendered_verline_dists[SCREEN_WIDTH];
-  f32 rendered_verline_floory[SCREEN_WIDTH];
+  i32 rendered_verline_floory[SCREEN_WIDTH];
+  i32 rendered_verline_ceily[SCREEN_WIDTH];
   memset(rendered_verline_dists , 0, sizeof(rendered_verline_dists));
   memset(rendered_verline_floory, 0, sizeof(rendered_verline_dists));
+  std::fill(rendered_verline_ceily, rendered_verline_ceily + SCREEN_WIDTH, SCREEN_HEIGHT - 1);
 
   while (queue_idx < queue.size) {
     std::clog << "Rendering Sector " << queue.arr[queue_idx]->id << " from queue (position: " << queue_idx << ")" << "\n";
@@ -419,7 +421,6 @@ static void render() {
           queue.arr[queue.size] = &state.sectors.arr[wall->viewportal - 1];
           queue.size++;
         }
-        continue;
       }
       
       for (u32 x = angle_to_screen(max(angle_a, angle_b)) + 1; (x <= angle_to_screen(min(angle_a, angle_b))) && (x < SCREEN_WIDTH); x++) {
@@ -433,13 +434,17 @@ static void render() {
           continue;
         //std::cout << isect.x << ", " << isect.y << " : "<< dist << "\n";
         const f32 h = SCREEN_HEIGHT / dist;
-        const i32 y0 = max((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zfloor - state.camera.z))) - (h / 2),                          0),//rendered_verline_floory[x]),
-                  y1 = min((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zceil  - state.camera.z))) + (h / 2),          SCREEN_HEIGHT - 1);
-
-        draw_line({(i32)x, y0}, {(i32)x, y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
-        draw_line({(i32)x, 0 }, {(i32)x, y0}, 0xFF0F0F0F);
-        rendered_verline_dists[x] = dist;
-        //rendered_verline_floory[x] = y0;
+        const i32 y0 = max((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zfloor - state.camera.z))) - (h / 2), rendered_verline_floory[x]),
+                  y1 = min((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zceil  - state.camera.z))) + (h / 2), rendered_verline_ceily[x]);
+        
+        rendered_verline_floory[x] = y0;
+        rendered_verline_ceily[x] = y1;
+        
+        if (!wall->viewportal) {
+          draw_line({(i32)x, y0}, {(i32)x, y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
+          draw_line({(i32)x, 0 }, {(i32)x, y0}, 0xFF0F0F0F); 
+          rendered_verline_dists[x] = dist;
+        }
       }
     }
   }
