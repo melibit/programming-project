@@ -63,6 +63,7 @@ static inline v2i add_v2i(v2i u, v2i v) {
 
 #define HFOV (PI / 4.0f)
 #define VFOV (0.5f)
+#define CAMZ 0.5f
 
 struct wall {
   v2 a, b;
@@ -92,6 +93,7 @@ struct walls {
 
 struct camera {
   v2 pos;
+  f32 z;
   f32 angle;
   usize sector;
 };
@@ -350,7 +352,9 @@ static void render() {
   memset(rendered_sectors, 0, sizeof(rendered_sectors));
   
   f32 rendered_verline_dists[SCREEN_WIDTH];
-  memset(rendered_verline_dists, 0, sizeof(rendered_verline_dists));
+  f32 rendered_verline_floory[SCREEN_WIDTH];
+  memset(rendered_verline_dists , 0, sizeof(rendered_verline_dists));
+  memset(rendered_verline_floory, 0, sizeof(rendered_verline_dists));
 
   while (queue_idx < queue.size) {
     std::clog << "Rendering Sector " << queue.arr[queue_idx]->id << " from queue (position: " << queue_idx << ")" << "\n";
@@ -418,24 +422,24 @@ static void render() {
         continue;
       }
       
-      for (u32 x = angle_to_screen(max(angle_a, angle_b)) + 1; x <= angle_to_screen(min(angle_a, angle_b)); x++) {
+      for (u32 x = angle_to_screen(max(angle_a, angle_b)) + 1; (x <= angle_to_screen(min(angle_a, angle_b))) && (x < SCREEN_WIDTH); x++) {
         f32 a = screen_to_angle(x);
-        if (x >= SCREEN_WIDTH)
-          continue;
         
         const v2 isect = intersect_line_segments(clip_a, clip_b, world_to_camera(state.camera.pos), rotate_vector({0, 1024}, -a));
         
         const f32 dist = isect.y; //sqrtf(isect.x * isect.x + isect.y + isect.y);
+        
+        if (rendered_verline_dists[x] && (dist - rendered_verline_dists[x]) >= 1e-3) 
+          continue;
         //std::cout << isect.x << ", " << isect.y << " : "<< dist << "\n";
         const f32 h = SCREEN_HEIGHT / dist;
-        const i32 y0 = max((SCREEN_HEIGHT / 2) - (h / 2), 0),
-                  y1 = min((SCREEN_HEIGHT / 2) + (h / 2), SCREEN_HEIGHT - 1);
+        const i32 y0 = max((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zfloor - state.camera.z))) - (h / 2),                          0),//rendered_verline_floory[x]),
+                  y1 = min((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zceil  - state.camera.z))) + (h / 2),          SCREEN_HEIGHT - 1);
 
-        if (!rendered_verline_dists[x] || (dist - rendered_verline_dists[x]) <= 1e-3) {
-          draw_line({(i32)x, y0}, {(i32)x, y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
-          draw_line({(i32)x, 0 }, {(i32)x, y0}, 0xFF0F0F0F);
-          rendered_verline_dists[x] = dist;
-        }
+        draw_line({(i32)x, y0}, {(i32)x, y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
+        draw_line({(i32)x, 0 }, {(i32)x, y0}, 0xFF0F0F0F);
+        rendered_verline_dists[x] = dist;
+        //rendered_verline_floory[x] = y0;
       }
     }
   }
@@ -467,6 +471,8 @@ i32 main(int argc, char* argv[]) {
     
   state.pixels = (u32 *) malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(u32));
   
+  state.camera.z = CAMZ;
+  
   clock_t tstart, tend; 
   tstart = clock();
 
@@ -491,8 +497,10 @@ i32 main(int argc, char* argv[]) {
     if (!inside_sector(state.camera.pos, &state.sectors.arr[state.camera.sector])) {
       for (usize i = 0; i < state.sectors.n; i++) {
         std::clog << "\t" << i << "\n";
-        if (inside_sector(state.camera.pos, &state.sectors.arr[i]))
+        if (inside_sector(state.camera.pos, &state.sectors.arr[i])) {
           state.camera.sector = i;
+          state.camera.z = state.sectors.arr[i].zfloor + CAMZ;
+        }
       }
     }
     //memset(state.pixels, 0xFF, SCREEN_WIDTH *SCREEN_HEIGHT * sizeof(u32));
