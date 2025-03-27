@@ -430,20 +430,36 @@ static void render() {
         
         const f32 dist = isect.y; //sqrtf(isect.x * isect.x + isect.y + isect.y);
         
-        if (rendered_verline_dists[x] && (dist - rendered_verline_dists[x]) >= 1e-3) 
+        if (rendered_verline_dists[x] && dist >= rendered_verline_dists[x]) 
           continue;
+        
         //std::cout << isect.x << ", " << isect.y << " : "<< dist << "\n";
         const f32 h = SCREEN_HEIGHT / dist;
         const i32 y0 = max((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zfloor - state.camera.z))) - (h / 2), rendered_verline_floory[x]),
                   y1 = min((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (sector->zceil  - state.camera.z))) + (h / 2), rendered_verline_ceily[x]);
         
-        rendered_verline_floory[x] = y0;
-        rendered_verline_ceily[x] = y1;
-        
         if (!wall->viewportal) {
           draw_line({(i32)x, y0}, {(i32)x, y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
           draw_line({(i32)x, 0 }, {(i32)x, y0}, 0xFF0F0F0F); 
           rendered_verline_dists[x] = dist;
+          rendered_verline_floory[x] = y0;
+          rendered_verline_ceily[x] = y1;
+        }
+        
+        if (wall->viewportal) {//&& !rendered_sectors[wall->viewportal - 1]){
+          const struct sector *new_sector = &state.sectors.arr[wall->viewportal - 1]; 
+          
+          const i32 new_y0 = max((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (new_sector->zfloor - state.camera.z))) - (h / 2), rendered_verline_floory[x]),
+                    new_y1 = min((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (new_sector->zceil  - state.camera.z))) + (h / 2), rendered_verline_ceily[x]);
+          
+          if (y0 > new_y0) {
+            draw_line({(i32)x, y0}, {(i32)x, new_y0}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
+          }
+          if (y1 > new_y1) 
+            draw_line({(i32)x, y1}, {(i32)x, new_y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
+          
+          rendered_verline_ceily[x] = y1;
+          rendered_verline_floory[x] = y0;
         }
       }
     }
