@@ -56,7 +56,7 @@ static inline v2i add_v2i(v2i u, v2i v) {
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
-#define WINDOW_SCALE 2
+#define WINDOW_SCALE 1
 
 #define MAX_SECTORS 64
 #define MAX_WALLS 512
@@ -261,10 +261,14 @@ u32 hash(u32 x) {
     x = (x >> 16) ^ x;
     return x;
 }
+
 static inline u32 get_map_colour(u32 w, u32 s) {
   u32 a = 0xFF;
-  u32 x = 0xCE * hash(w+1 + hash(s));
-  return a << 24 | x; 
+  u32 sector_col = (0xCE * hash(hash( s ))) & 0xC0C0C0C0;
+  u32 wall_col = 0x4E * hash(hash(w+1));
+  u32 colour = sector_col | (wall_col & 0xFF) / 4 | (((wall_col >> 8) & 0xFF)/4) << 8 | (((wall_col >> 16) & 0xFF)/4) << 16;
+  
+  return a << 24 | colour; 
 }
 
 static inline v2i transform_to_map(v2 v, f32 sf) {
@@ -440,7 +444,8 @@ static void render() {
         
         if (!wall->viewportal) {
           draw_line({(i32)x, y0}, {(i32)x, y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
-          draw_line({(i32)x, 0 }, {(i32)x, y0}, 0xFF0F0F0F); 
+          //draw_line({(i32)x, 0}, {(i32)x, min(rendered_verline_floory[x], y0)}, 0xFF0F0F0F); 
+          //draw_line({(i32)x, y1}, {(i32)x, rendered_verline_ceily[x]}, 0xFF0F0F0F);
           rendered_verline_dists[x] = dist;
           rendered_verline_floory[x] = y0;
           rendered_verline_ceily[x] = y1;
@@ -452,14 +457,14 @@ static void render() {
           const i32 new_y0 = max((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (new_sector->zfloor - state.camera.z))) - (h / 2), rendered_verline_floory[x]),
                     new_y1 = min((SCREEN_HEIGHT / 2) + (SCREEN_HEIGHT / (dist / (new_sector->zceil  - state.camera.z))) + (h / 2), rendered_verline_ceily[x]);
           
-          if (y0 > new_y0) {
+          if (y0 < new_y0) {
             draw_line({(i32)x, y0}, {(i32)x, new_y0}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
           }
           if (y1 > new_y1) 
             draw_line({(i32)x, y1}, {(i32)x, new_y1}, darken_colour(get_map_colour(i, sector->id), (dist*dist)/32));
           
-          rendered_verline_ceily[x] = y1;
-          rendered_verline_floory[x] = y0;
+          rendered_verline_floory[x] = max(y0, new_y0); 
+          rendered_verline_ceily[x] = min(y1, new_y1);
         }
       }
     }
