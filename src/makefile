@@ -1,2 +1,2 @@
 main:
-	g++ main.c -s -lSDL3 -o main
+	gcc main.c -s -lSDL3 -o ../bin/main
